@@ -1,0 +1,328 @@
+{
+    "Parameters": {
+        "CodeBucket":  {
+            "Type" : "String",
+            "Default" : "italo-idata-code"
+        },
+        "CollectorCodePath":  {
+            "Type" : "String",
+            "Default" : "src/lambdas/collector.zip"
+        },
+        "GlueProcessorCodePath":  {
+            "Type" : "String",
+            "Default" : "src/lambdas/processor.zip"
+        },
+        "GlueUpdaterCodePath":  {
+            "Type" : "String",
+            "Default" : "src/lambdas/glue_updater.zip"
+        },
+        "URL":  {
+            "Type" : "String",
+            "Default" : "https://eforexcel.com/wp/wp-content/uploads/2020/09/2m-Sales-Records.zip"
+        }
+    },
+    "Resources": {
+        "StepFunctionsSales": {
+            "Type":"AWS::StepFunctions::StateMachine",
+            "Properties":{
+                "StateMachineName":"Sales_Records_Downloader",
+                "StateMachineType":"STANDARD",
+                "RoleArn": { "Fn::GetAtt" : ["StepFunctionsSalesRecordsRole", "Arn"] },
+                "DefinitionString": {
+                    "Fn::Join": [
+                        "\n",
+                        [
+                            "{",
+                            "    \"StartAt\": \"Collector\",",
+                            "    \"States\" : {",
+                            "        \"Collector\" : {",
+                            "            \"Type\" : \"Task\", ",
+                            "            \"Resource\" : ",
+                            "Fn::Join": ["",["\"",{ "Fn::GetAtt" : ["LambdaCollector", "Arn"] },"\","]],
+                            "            \"Next\" : \"Processor\"",
+                            "        },",
+                            "        \"Processor\" : {",
+                            "            \"Type\" : \"Task\", ",
+                            "            \"Resource\" : ",
+                            "Fn::Join": ["",["\"",{ "Fn::GetAtt" : ["LambdaProcessor", "Arn"] },"\","]],
+                            "            \"Next\" : \"GlueUpdater\"",
+                            "        },",
+                            "        \"GlueUpdater\" : {",
+                            "            \"Type\" : \"Task\", ",
+                            "            \"Resource\" : ",
+                            "Fn::Join": ["",["\"",{ "Fn::GetAtt" : ["LambdaGlueUpdater", "Arn"] },"\","]],
+                            "            \"End\" : true",
+                            "        }",
+                            "    }",
+                            "}"
+                        ]
+                    ]
+                }
+            }
+        },
+        "StepFunctionsSalesRecordsRole": {
+            "Type": "AWS::IAM::Role",
+                "Properties": {
+                "RoleName": "StepFunctionsSalesRecordsRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "states.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/"
+            }
+        },
+        "StepFunctionsSalesRecordsPolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "StepFunctionsSalesRecordsPolicy",
+                "Roles": [
+                    {
+                        "Ref": "StepFunctionsSalesRecordsRole"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "lambda:InvokeFunction"
+                            ],
+                            "Resource": [
+                                { "Fn::GetAtt" : ["LambdaCollector", "Arn"] },
+                                { "Fn::GetAtt" : ["LambdaGlueUpdater", "Arn"] },
+                                { "Fn::GetAtt" : ["LambdaProcessor", "Arn"] }
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+
+        "LambdaCollector": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Handler": "lambda_function.lambda_handler",
+                "Role": { "Fn::GetAtt" : ["LambdaCollectorRole", "Arn"] },
+                "Code": {
+                    "S3Bucket" : { "Ref" : "CodeBucket" },
+                    "S3Key" : { "Ref" : "CollectorCodePath" }
+                },
+                "Environment": {
+                    "Variables": {
+                        "DataBucket": { "Ref" : "DataBucket" },
+                        "URL": { "Ref" : "URL" }
+                    }
+                },
+                "Runtime": "python3.9",
+                "MemorySize": 1024,
+                "Timeout": 900
+            }
+        },
+        "LambdaCollectorRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "LambdaCollectorRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                ]
+            }
+        },
+
+        "LambdaGlueUpdater": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Handler": "lambda_function.lambda_handler",
+                "Role": { "Fn::GetAtt" : ["LambdaGlueUpdaterRole", "Arn"] },
+                "Code": {
+                    "S3Bucket" : { "Ref" : "CodeBucket" },
+                    "S3Key" : { "Ref" : "GlueUpdaterCodePath" }
+                },
+                "Environment": {
+                    "Variables": {
+                        "DataBucket": { "Ref" : "DataBucket" }
+                    }
+                },
+                "Runtime": "python3.9",
+                "MemorySize": 1024,
+                "Timeout": 900
+            }
+        },
+        "LambdaGlueUpdaterRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "LambdaGlueUpdaterRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                    "arn:aws:iam::aws:policy/AdministratorAccess"
+                ]
+            }
+        },
+
+        "LambdaProcessor": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Handler": "lambda_function.lambda_handler",
+                "Role": { "Fn::GetAtt" : ["LambdaProcessorRole", "Arn"] },
+                "Code": {
+                    "S3Bucket" : { "Ref" : "CodeBucket" },
+                    "S3Key" : { "Ref" : "GlueProcessorCodePath" }
+                },
+                "Environment": {
+                    "Variables": {
+                        "DataBucket": { "Ref" : "DataBucket" }
+                    }
+                },
+                "Runtime": "python3.9",
+                "MemorySize": 1024,
+                "Timeout": 900,
+                "Layers": [ "arn:aws:lambda:eu-west-1:336392948345:layer:AWSSDKPandas-Python39:3" ]
+            }
+        },
+        "LambdaProcessorRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "RoleName": "LambdaProcessorRole",
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [{
+                        "Effect": "Allow",
+                        "Principal": {
+                            "Service": ["lambda.amazonaws.com"]
+                        },
+                        "Action": ["sts:AssumeRole"]
+                    }]
+                },
+                "Path": "/",
+                "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                ]
+            }
+        },
+
+        "CodeBucketReadPolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "CodeBucketReadPolicy",
+                "Roles": [
+                    {"Ref": "LambdaProcessorRole"},
+                    {"Ref": "LambdaGlueUpdaterRole"},
+                    {"Ref": "LambdaCollectorRole"}
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:Get*",
+                                "s3:List*",
+                                "s3-object-lambda:Get*",
+                                "s3-object-lambda:List*"
+                            ],
+                            "Resource": { "Fn::Join" : ["", ["arn:aws:s3:::", { "Ref" : "CodeBucket" }]]}
+                        }
+                    ]
+                }
+            }
+        },
+
+        "DataBucket": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "BucketName": "italo-idata-data"
+            }
+        },
+        "DataBucketReadWritePolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "DataBucketReadPolicy",
+                "Roles": [
+                    {"Ref": "LambdaProcessorRole"},
+                    {"Ref": "LambdaCollectorRole"}
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": "s3:*",
+                            "Resource": [
+                                { "Fn::Join" : ["", [{ "Fn::GetAtt" : ["DataBucket", "Arn"] }, "/*"]]},
+                                { "Fn::Join" : ["", [{ "Fn::GetAtt" : ["DataBucket", "Arn"] }]]}
+                            ]
+                        }
+                    ]
+                }
+            }
+        },
+        "DataBucketReadPolicy": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyName": "DataBucketReadPolicy",
+                "Roles": [
+                    {"Ref": "LambdaGlueUpdaterRole"}
+                ],
+                "PolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "s3:Get*",
+                                "s3:List*",
+                                "s3-object-lambda:Get*",
+                                "s3-object-lambda:List*"
+                            ],
+                            "Resource": { "Fn::Join" : ["", [{ "Fn::GetAtt" : ["DataBucket", "Arn"] }, "/*"]]}
+                        }
+                    ]
+                }
+            }
+        },
+
+        "GlueDatabase": {
+            "Type" : "AWS::Glue::Database",
+            "Properties" : {
+                "CatalogId" : { "Ref" : "AWS::AccountId" },
+                "DatabaseInput" : {
+                    "Name": "idata"
+                }
+            }
+        }
+    }
+}
